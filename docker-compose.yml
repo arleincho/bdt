@@ -1,0 +1,148 @@
+version: "2"
+
+services:
+  namenode:
+    build: ./namenode
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.1.2-java8
+    container_name: namenode
+    volumes:
+      - ./data/files:/hadoop/files
+      - ./data/jar:/hadoop/scripts
+    environment:
+      - CLUSTER_NAME=test
+    env_file:
+      - ./hadoop.env
+    ports:
+      - 9870:9870
+      - 9820:9820
+      - 9871:9871
+      - 9000:9000
+  
+  resourcemanager:
+    build: ./resourcemanager
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.1.2-java8
+    container_name: resourcemanager
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870 datanode1:9864"
+    depends_on:
+      - namenode
+      - datanode1
+    env_file:
+      - ./hadoop.env
+    ports:
+      - "8088:8088"
+  
+  historyserver:
+    build: ./historyserver
+    image: bde2020/hadoop-historyserver:2.0.0-hadoop3.1.2-java8
+    container_name: historyserver
+    depends_on:
+      - namenode
+      - datanode1
+    env_file:
+      - ./hadoop.env
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870 datanode1:9864 resourcemanager:8088"
+    ports:
+      - 8188:8188
+  
+  nodemanager:
+    build: ./nodemanager
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.1.2-java8
+    container_name: nodemanager
+    depends_on:
+      - namenode
+      - datanode1
+    env_file:
+      - ./hadoop.env
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870 datanode1:9864 resourcemanager:8088"
+    
+  
+  datanode1:
+    build: ./datanode
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.1.2-java8
+    container_name: datanode1
+    hostname: datanode1
+    depends_on:
+      - namenode
+    env_file:
+      - ./hadoop.env
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+    ports:
+      - 9864:9864
+      - 9865:9865
+      - 8042:8042
+      - 9867:9867
+      - 9866:9866
+
+
+  hive-server:
+    image: arleicho/haddop-hive:1.0.0-hadoop3.1.2
+    container_name: hive-server
+    env_file:
+      - ./hive/hadoop-hive.env
+    environment:
+      HIVE_CORE_CONF_javax_jdo_option_ConnectionURL: "jdbc:postgresql://hive-metastore/metastore"
+      SERVICE_PRECONDITION: "hive-metastore:9083"
+    ports:
+      - "10000:10000"
+
+
+  hive-metastore:
+    image: arleicho/haddop-hive:1.0.0-hadoop3.1.2
+    container_name: hive-metastore
+    volumes:
+      - ./data/files:/data/files
+    env_file:
+      - ./hive/hadoop-hive.env
+    command: /opt/hive/bin/hive --service metastore
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870 datanode1:9864 hive-metastore-postgresql:5432"
+    ports:
+      - "9083:9083"
+
+
+  hive-metastore-postgresql:
+    container_name: postgres
+    restart: always
+    image: postgres:10.3
+    environment:
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+      POSTGRES_DB: metastore
+    volumes:
+      # - ./data/postgres:/var/lib/postgresql/data
+      - ./hive/docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
+
+  phppgadmin:
+    container_name: phppgadmin
+    restart: always
+    image: dockage/phppgadmin:latest
+    depends_on:
+      - hive-metastore-postgresql
+    ports:
+      - "8001:80"
+    environment:
+      - PHP_PG_ADMIN_SERVER_DESC=PostgreSQL API
+      - PHP_PG_ADMIN_SERVER_HOST=postgres
+      - PHP_PG_ADMIN_SERVER_PORT=5432
+      - PHP_PG_ADMIN_SERVER_SSL_MODE=allow
+      - PHP_PG_ADMIN_SERVER_PG_DUMP_PATH=/usr/bin/pg_dump
+      - PHP_PG_ADMIN_SERVER_PG_DUMPALL_PATH=/usr/bin/pg_dumpall
+      - PHP_PG_ADMIN_DEFAULT_LANG=auto
+      - PHP_PG_ADMIN_AUTO_COMPLETE=default on
+      - PHP_PG_ADMIN_EXTRA_LOGIN_SECURITY=false
+      - PHP_PG_ADMIN_OWNED_ONLY=false
+      - PHP_PG_ADMIN_SHOW_COMMENTS=true
+      - PHP_PG_ADMIN_SHOW_ADVANCED=false
+      - PHP_PG_ADMIN_SHOW_SYSTEM=false
+      - PHP_PG_ADMIN_MIN_PASSWORD_LENGTH=1
+      - PHP_PG_ADMIN_LEFT_WIDTH=200
+      - PHP_PG_ADMIN_THEME=default
+      - PHP_PG_ADMIN_SHOW_OIDS=false
+      - PHP_PG_ADMIN_MAX_ROWS=30
+      - PHP_PG_ADMIN_MAX_CHARS=50
+      - PHP_PG_ADMIN_USE_XHTML_STRICT=false
+      - PHP_PG_ADMIN_AJAX_REFRESH=3
